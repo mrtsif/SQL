@@ -1,3 +1,5 @@
+DROP database inoffice;
+CREATE database inoffice;
 -- inoffice - экосистема организации, позволяющая объективно оценивать сотрудников.
 
 USE inoffice
@@ -102,7 +104,7 @@ VALUES
 	('Qality Control'),
 	('Industrial'),
 	('Technical Support'),
-	('Exploitation'),
+	('Exploitation');
 
 -- Таблица profession хранит данные о профессиях, и необходимом образовании, для трудоустройства 
 DROP TABLE IF EXISTS profession;
@@ -148,8 +150,8 @@ CREATE TABLE vacancies (
 INSERT INTO
 	vacancies (department_id, profession_id)
 VALUES
-	(1, 1)
-	(1, 2)
+	(1, 1),
+	(1, 2),
 	(2, 2),
 	(5, 3);
 
@@ -192,7 +194,7 @@ UPDATE skills SET specialty = 'engineer' WHERE level = 4 AND employee_id % 2 = 0
 UPDATE skills SET degree = 'master' WHERE level = 4 AND employee_id % 2 = 0;
 UPDATE skills SET degree = 'bachelor' WHERE level = 4 AND employee_id % 2 = 1;
 UPDATE skills SET last_institution = 'institute' WHERE level = 4;
-UPDATE skills SET last_institution = 'сommunity college' WHERE level = 3;
+UPDATE skills SET last_institution = 'community college' WHERE level = 3;
 UPDATE skills SET last_institution = 'vocational school' WHERE level = 2;
 UPDATE skills SET last_institution = 'school' WHERE level = 1; 
 
@@ -288,9 +290,10 @@ END;
 
 CALL now5 ();
 
-UPDATE documents SET diploma_id = (SELECT * FROM (SELECT skills.diploma_id FROM skills, documents WHERE skills.employee_id = documents.employee_id) AS r);
-UPDATE documents SET scan_id = (SELECT * FROM (SELECT media.scan_id FROM media, documents WHERE media.scan_id = documents.employee_id) AS h);
+UPDATE documents as a INNER JOIN (SELECT employee_id, diploma_id FROM skills) as b SET a.diploma_id = b.diploma_id WHERE a.employee_id = b.employee_id;
+UPDATE documents as a INNER JOIN (SELECT  scan_id FROM media) as b SET a.scan_id = b.scan_id WHERE a.employee_id = b.scan_id;
 
+SELECT * FROM documents;
 -- Таблица scores_count является справочником для подсчета очков 
 DROP TABLE IF EXISTS scores_count;
 CREATE TABLE scores_count (
@@ -299,6 +302,42 @@ CREATE TABLE scores_count (
 	value INT COMMENT 'Колличество очков, начисляемых за достижение'
 );
 
+-- данные заполненны вручную
+INSERT INTO scores_count (achievement, value) VALUES
+('gratitude', 50), -- 50 очков за письменную благодарность
+('reprimande', -50), -- -50 очков за выговор
+('overtime', 2); -- по 2 очка за каждый час переработки
+
+-- Таблица scores_count считает общее колличество заработанных очков каждым сотрудником
+DROP TABLE IF EXISTS total_scores;
+CREATE TABLE total_scores (
+	employee_id INT UNSIGNED NOT NULL,	
+	gratitudes INT COMMENT 'общее колличество благодарностей, за месяц',
+	reprimandes INT COMMENT 'общее колличество выговоров, за месяц',
+	overtimes INT COMMENT 'общее колличество перервботанных часов, за месяц',
+	total_scores INT COMMENT 'общее колличество очков',
+	FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
+);
+
+-- данные заполненны вручную
+DROP PROCEDURE IF EXISTS now6;
+CREATE PROCEDURE now6 ()
+BEGIN
+  DECLARE i INT DEFAULT 1;
+  WHILE i < 51 DO
+	INSERT INTO total_scores (employee_id, gratitudes, reprimandes, overtimes)
+			VALUES (i, FLOOR(RAND()*3), FLOOR(RAND()*3), FLOOR(RAND()*40));
+	SET i = i + 1;
+  END WHILE;
+END;
+
+CALL now6 ();
+
+UPDATE total_scores SET total_scores = gratitudes * (SELECT value FROM scores_count WHERE achievement = 'gratitude') + 
+reprimandes * (SELECT value FROM scores_count WHERE achievement = 'reprimande') + overtimes * (SELECT value FROM scores_count WHERE achievement = 'overtime');
+
+
+
 -- Таблица salary_calculation является справочником для подсчета заработных плат
 DROP TABLE IF EXISTS salary_calculation;
 CREATE TABLE salary_calculation (
@@ -306,7 +345,6 @@ CREATE TABLE salary_calculation (
 	factor VARCHAR(100) COMMENT 'Фактор повышения заработной платы',
 	cost INT COMMENT 'Значение фактора повышения заработной платы, $'
 );
-
 
 
 -- Таблица history хранит историю ротаций сотрудников внутри компании
@@ -324,12 +362,12 @@ CREATE TABLE history (
 DROP TABLE IF EXISTS profiles;
 CREATE TABLE profiles (
 	employee_id INT UNSIGNED UNIQUE NOT NULL,
-	profession_id INT UNSIGNED NOT NULL,
-	gender char(1) NOT NULL COMMENT 'Гендер сотрудника',
+	profession_id INT UNSIGNED,
+	gender char(1)  COMMENT 'Гендер сотрудника',
 	birthday DATE NOT NULL COMMENT 'Дата рождения сотрудника',
-	status varchar(30) NOT NULL COMMENT 'Статус сотрудника',
-	country varchar(130) NOT NULL COMMENT 'страна',
-	city varchar(130) NOT NULL COMMENT 'город',
+	status varchar(30) COMMENT 'Статус сотрудника',
+	country varchar(130) COMMENT 'страна',
+	city varchar(130) COMMENT 'город',
 	total_gratitudes INT COMMENT 'Колличество письменных благодарностей',
 	total_reprimandes INT COMMENT 'Колличество выговоров',
 	total_scores INT COMMENT 'Общее колличество очков',
@@ -337,6 +375,20 @@ CREATE TABLE profiles (
 	FOREIGN KEY (employee_id) REFERENCES employees (employee_id),
 	FOREIGN KEY (profession_id) REFERENCES profession (profession_id)
 );
+
+-- данные заполненны вручную
+DROP PROCEDURE IF EXISTS now7;
+CREATE PROCEDURE now7 ()
+BEGIN
+  DECLARE i INT DEFAULT 1;
+  WHILE i < 51 DO
+	INSERT INTO profiles (employee_id, birthday, profession_id)
+			VALUES (i, DATE_ADD('1982-01-01',INTERVAL FLOOR(RAND() * 7300) DAY), FLOOR(RAND() * (15-1)+1));
+	SET i = i + 1;
+  END WHILE;
+END;
+
+CALL now7 ();
 
 
 -- Таблица payments хранит значения о начислении выплат сотрудникам, в текущем месяце и факторы рассчета
@@ -351,8 +403,39 @@ CREATE TABLE payment_calculation (
 	FOREIGN KEY (employee_id) REFERENCES employees (employee_id)
 );
 
+-- Дозаполнение таблицы deprtment
+UPDATE department SET total_scores = (SELECT SUM(t.total_scores) FROM total_scores t INNER JOIN profiles p INNER JOIN profession pr 
+ON t.employee_id = p.employee_id and p.profession_id = pr.profession_id WHERE pr.department_id = 1) WHERE department_id = 1;
 
+UPDATE department SET total_scores = (SELECT SUM(t.total_scores) FROM total_scores t INNER JOIN profiles p INNER JOIN profession pr 
+ON t.employee_id = p.employee_id and p.profession_id = pr.profession_id WHERE pr.department_id = 2) WHERE department_id = 2;
 
+UPDATE department SET total_scores = (SELECT SUM(t.total_scores) FROM total_scores t INNER JOIN profiles p INNER JOIN profession pr 
+ON t.employee_id = p.employee_id and p.profession_id = pr.profession_id WHERE pr.department_id = 3) WHERE department_id = 3;
+
+UPDATE department SET total_scores = (SELECT SUM(t.total_scores) FROM total_scores t INNER JOIN profiles p INNER JOIN profession pr 
+ON t.employee_id = p.employee_id and p.profession_id = pr.profession_id WHERE pr.department_id = 4) WHERE department_id = 4;
+
+UPDATE department SET total_scores = (SELECT SUM(t.total_scores) FROM total_scores t INNER JOIN profiles p INNER JOIN profession pr 
+ON t.employee_id = p.employee_id and p.profession_id = pr.profession_id WHERE pr.department_id = 5) WHERE department_id = 5;
+
+UPDATE department SET bonuses_balance = ( SELECT (SELECT value FROM budget ORDER BY date DESC LIMIT 1) /
+(SELECT * FROM (SELECT SUM(total_scores) FROM department) AS ts) * total_scores);
+
+SELECT * FROM budget;
+SELECT * FROM profiles;
+SELECT * FROM employees;
+SELECT * FROM media;
+SELECT * FROM documents;
+SELECT * FROM skills;
+SELECT * FROM department;
+SELECT * FROM profession;
+SELECT * FROM vacancies;
+SELECT * FROM scores_count;
+SELECT * FROM salary_calculation;
+SELECT * FROM payment_calculation;
+SELECT * FROM history;
+SELECT * FROM total_scores;
 
 
 
